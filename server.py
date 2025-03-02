@@ -181,7 +181,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 async def send_success_response(websocket: WebSocket, result: any, id: any):
-    """Отправляет успешный JSON-RPC ответ."""
+    """Отправляет успешный ответ"""
     response = {
         "jsonrpc": "2.0",
         "result": result,
@@ -191,7 +191,7 @@ async def send_success_response(websocket: WebSocket, result: any, id: any):
 
 
 async def send_error_response(websocket: WebSocket, message: str, code: int, id: any):
-    """Отправляет JSON-RPC ответ с ошибкой."""
+    """Отправляет ответ с ошибкой"""
     response = {
         "jsonrpc": "2.0",
         "error": {
