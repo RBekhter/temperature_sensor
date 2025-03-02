@@ -1,9 +1,10 @@
+import asyncio
+import datetime
+import json
+import random
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-import asyncio
-import random
-import json
-import datetime
 
 app = FastAPI()
 
@@ -48,8 +49,7 @@ html = """
 
 
 async def generate_data():
-    """Симулирует датчик темературы"""
-    ids = 0
+    """Эмулирует показания датчика темературы"""
     while True:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         rate = random.choice([-1, 1])
@@ -58,8 +58,7 @@ async def generate_data():
             'time': now,
             'value': value
         }
-        ids += 1
-        yield data, ids
+        yield data
         await asyncio.sleep(1)
 
 
@@ -96,6 +95,8 @@ async def websocket_endpoint(websocket: WebSocket):
     generator_task = None
     try:
         while True:
+            """Для облегчения тестирования
+            имитируется JSON-формат запроса клиента"""
             data = await websocket.receive_text()
             json_data = {
                 "jsonrpc": "2.0",
@@ -112,13 +113,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 message_id = data.get("id")
 
                 if jsonrpc_version != "2.0":
-                    await send_error_response(websocket, "Invalid JSON-RPC version", -32600,
+                    await send_error_response(websocket,
+                                              "Invalid JSON-RPC version",
+                                              -32600,
                                               message_id)
                     continue
 
                 if method == 'start':
                     if generator_task and not generator_task.done():
-                        await send_error_response(websocket, "Generator already running", -32602,
+                        await send_error_response(websocket,
+                                                  "Already running",
+                                                  -32602,
                                                   message_id)
                         continue
 
@@ -132,7 +137,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 }
                                 await websocket.send_text(json.dumps(response))
                         except asyncio.CancelledError:
-                            print('Датчик не передает показания')
+                            print('Клиент приостановил прием показаний')
                         except WebSocketDisconnect:
                             print('Подключение разорвано')
 
@@ -148,19 +153,21 @@ async def websocket_endpoint(websocket: WebSocket):
                         generator_task = None
                     else:
                         await send_error_response(websocket,
-                                                  "Generator not running", -32602,
-                                                  message_id
-                                                  )
-                        
+                                                  "Not running",
+                                                  -32602,
+                                                  message_id)
+
                 else:
-                    await send_error_response(websocket, "Method not found", -32601,
+                    await send_error_response(websocket,
+                                              "Method not found",
+                                              -32601,
                                               message_id)
-         
+
             except json.JSONDecodeError:
                 await send_error_response(websocket, "Invalid JSON", -32700,
                                           None)
             except WebSocketDisconnect:
-                print("Client disconnected")
+                print("Клиент отключился")
                 break
 
     finally:
