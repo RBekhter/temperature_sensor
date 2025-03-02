@@ -49,6 +49,7 @@ html = """
 
 async def generate_data():
     """Симулирует датчик темературы"""
+    ids = 0
     while True:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         rate = random.choice([-1, 1])
@@ -57,7 +58,8 @@ async def generate_data():
             'time': now,
             'value': value
         }
-        yield json.dumps(data)
+        ids += 1
+        yield data, ids
         await asyncio.sleep(1)
 
 
@@ -92,29 +94,103 @@ async def get():
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     generator_task = None
-    while True:
-        data = await websocket.receive_text()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            json_data = {
+                "jsonrpc": "2.0",
+                "method": data,
+                "params": "",
+                "id": 5
+            }
+            data = json.dumps(json_data)
+            try:
+                data = json.loads(data)
+                jsonrpc_version = data.get("jsonrpc")
+                method = data.get("method")
+                params = data.get("params")
+                message_id = data.get("id")
 
-        if data == 'start':
-            async def send_data():
-                async for data in generate_data():
-                    await websocket.send_text(f'data: {data}')
+                if jsonrpc_version != "2.0":
+                    await send_error_response(websocket, "Invalid JSON-RPC version", -32600,
+                                              message_id)
+                    continue
 
-            generator_task = asyncio.create_task(send_data())
-            await websocket.send_text("Началась передача показаний")
+                if method == 'start':
+                    if generator_task and not generator_task.done():
+                        await send_error_response(websocket, "Generator already running", -32602,
+                                                  message_id)
+                        continue
 
-        elif data == "stop":
-            if generator_task:
-                generator_task.cancel()
-                try:
-                    await generator_task
-                except asyncio.CancelledError:
-                    pass
-                    await websocket.send_text("Передача остановлена")
-                    generator_task = None
-            else:
-                await websocket.send_text("Передача показаний не запущена")
+                    async def send_data():
+                        try:
+                            async for data in generate_data():
+                                response = {
+                                    "jsonrpc": "2.0",
+                                    "result": data,
+                                    "id": message_id
+                                }
+                                await websocket.send_text(json.dumps(response))
+                        except asyncio.CancelledError:
+                            print('Датчик не передает показания')
+                        except WebSocketDisconnect:
+                            print('Подключение разорвано')
 
-        else:
-            await websocket.send_text(
-                f'Ваша команда: {data}. Используйте start/stop для управления')
+                    generator_task = asyncio.create_task(send_data())
+
+                elif method == 'stop':
+                    if generator_task:
+                        generator_task.cancel()
+                        try:
+                            await generator_task
+                        except asyncio.CancelledError:
+                            pass
+                        generator_task = None
+                    else:
+                        await send_error_response(websocket,
+                                                  "Generator not running", -32602,
+                                                  message_id
+                                                  )
+                        
+                else:
+                    await send_error_response(websocket, "Method not found", -32601,
+                                              message_id)
+         
+            except json.JSONDecodeError:
+                await send_error_response(websocket, "Invalid JSON", -32700,
+                                          None)
+            except WebSocketDisconnect:
+                print("Client disconnected")
+                break
+
+    finally:
+        if generator_task:
+            generator_task.cancel()
+            try:
+                await generator_task
+            except asyncio.CancelledError:
+                pass
+        print('Подключение закрыто')
+
+
+async def send_success_response(websocket: WebSocket, result: any, id: any):
+    """Отправляет успешный JSON-RPC ответ."""
+    response = {
+        "jsonrpc": "2.0",
+        "result": result,
+        "id": id
+    }
+    await websocket.send_text(json.dumps(response))
+
+
+async def send_error_response(websocket: WebSocket, message: str, code: int, id: any):
+    """Отправляет JSON-RPC ответ с ошибкой."""
+    response = {
+        "jsonrpc": "2.0",
+        "error": {
+            "code": code,
+            "message": message
+        },
+        "id": id
+    }
+    await websocket.send_text(json.dumps(response))
