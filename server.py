@@ -52,7 +52,7 @@ async def generate_data():
     """Эмулирует показания датчика темературы"""
     while True:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        rate = random.choice([-1, 1])
+        rate = random.choice([-1, 0, 1])
         value = 150 + rate
         data = {
             'time': now,
