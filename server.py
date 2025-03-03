@@ -95,13 +95,11 @@ async def websocket_endpoint(websocket: WebSocket):
     generator_task = None
     try:
         while True:
-            """Для облегчения тестирования
-            имитируется JSON-формат запроса клиента"""
+            # Имитируем JSON-формат запроса клиента
             data = await websocket.receive_text()
             json_data = {
                 "jsonrpc": "2.0",
                 "method": data,
-                "params": "",
                 "id": 5
             }
             data = json.dumps(json_data)
@@ -109,7 +107,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 data = json.loads(data)
                 jsonrpc_version = data.get("jsonrpc")
                 method = data.get("method")
-                params = data.get("params")
                 message_id = data.get("id")
 
                 if jsonrpc_version != "2.0":
@@ -130,14 +127,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     async def send_data():
                         try:
                             async for data in generate_data():
-                                response = {
-                                    "jsonrpc": "2.0",
-                                    "result": data,
-                                    "id": message_id
-                                }
-                                await websocket.send_text(json.dumps(response))
+                                await send_success_response(
+                                                    websocket,
+                                                    data,
+                                                    message_id)
                         except asyncio.CancelledError:
-                            print('Клиент приостановил прием показаний')
+                            print('Датчик прекратил передачу значений')
                         except WebSocketDisconnect:
                             print('Подключение разорвано')
 
@@ -181,7 +176,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 async def send_success_response(websocket: WebSocket, result: any, id: any):
-    """Отправляет успешный ответ"""
     response = {
         "jsonrpc": "2.0",
         "result": result,
@@ -191,7 +185,6 @@ async def send_success_response(websocket: WebSocket, result: any, id: any):
 
 
 async def send_error_response(websocket: WebSocket, message: str, code: int, id: any):
-    """Отправляет ответ с ошибкой"""
     response = {
         "jsonrpc": "2.0",
         "error": {
