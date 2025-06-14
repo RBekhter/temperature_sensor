@@ -113,7 +113,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     await send_error_response(websocket,
                                               "Invalid JSON-RPC version",
                                               -32600,
-                                              message_id)
+                                              message_id
+                                              )
                     continue
 
                 if method == 'start':
@@ -121,7 +122,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         await send_error_response(websocket,
                                                   "Already running",
                                                   -32602,
-                                                  message_id)
+                                                  message_id
+                                                  )
                         continue
 
                     async def send_data():
@@ -150,13 +152,15 @@ async def websocket_endpoint(websocket: WebSocket):
                         await send_error_response(websocket,
                                                   "Not running",
                                                   -32602,
-                                                  message_id)
+                                                  message_id
+                                                  )
 
                 else:
                     await send_error_response(websocket,
                                               "Method not found",
                                               -32601,
-                                              message_id)
+                                              message_id
+                                              )
 
             except json.JSONDecodeError:
                 await send_error_response(websocket, "Invalid JSON", -32700,
