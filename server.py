@@ -92,15 +92,17 @@ async def get():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    request_counter = 0
     generator_task = None
     try:
         while True:
             # Имитируем JSON-формат запроса клиента
             data = await websocket.receive_text()
+            request_counter += 1
             json_data = {
                 "jsonrpc": "2.0",
                 "method": data,
-                "id": 5
+                "id": request_counter
             }
             data = json.dumps(json_data)
             try:
@@ -148,20 +150,19 @@ async def websocket_endpoint(websocket: WebSocket):
                         except asyncio.CancelledError:
                             pass
                         generator_task = None
-                    else:
-                        await send_error_response(websocket,
-                                                  "Not running",
-                                                  -32602,
-                                                  message_id
-                                                  )
-
+                elif method == 'disconnect':
+                    await send_success_response(websocket,
+                                                "Connection closed",
+                                                message_id
+                                                )
+                    await websocket.close()
+                    break
                 else:
                     await send_error_response(websocket,
                                               "Method not found",
                                               -32601,
                                               message_id
                                               )
-
             except json.JSONDecodeError:
                 await send_error_response(websocket, "Invalid JSON", -32700,
                                           None)

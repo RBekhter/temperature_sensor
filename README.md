@@ -13,3 +13,7 @@
 * uvicorn server:app --reload --port 8000
 * manage:  
 * http://127.0.0.1:8000/
+
+* Docker:
+* docker build -t temperature-sensor .
+* docker run -d -p 8000:8000 --name temp-sens temperature-sensor
