@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Temperature sensor</title>
+</head>
+<body>
+    <h1>Датчик температуры</h1>
+    <text>
+        Используйте команды для управления передачей данных:<br>
+        start — чтобы начать<br>
+        stop — чтобы остановить
+    </text>
+
+    <form action="" onsubmit="sendMessage(event)">
+        <input type="text" id="messageText" autocomplete="off"/>
+        <button>Send</button>
+    </form>
+
+    <ul id='messages'>
+    </ul>
+
+    <script>
+        var ws = new WebSocket("ws://localhost:8000/ws/client");
+        var messages = document.getElementById('messages');
+        var requestCounter = 0;
+
+        ws.onmessage = function(event) {
+            var data;
+            try {
+                data = JSON.parse(event.data);
+            } catch (e) {
+                addMessage("⚠️ " + event.data);
+                return;
+            }
+
+            var message = document.createElement('li');
+
+            // JSON-RPC ответ
+            if (data.result !== undefined) {
+                if (data.result === "Start command sent") {
+                    message.textContent = "→ Start command sent";
+                } else if (data.result === "Stop command sent") {
+                    message.textContent = "→ Stop command sent";
+                } 
+                // Показания датчика
+                else if (typeof data.result === "object" && data.result.time && data.result.value) {
+                    message.textContent = "[" + data.result.time + "] Value: " + data.result.value;
+                } else {
+                    message.textContent = "→ " + data.result;
+                }
+            }
+            // Ошибка
+            else if (data.error) {
+                message.textContent = "❌ Error: " + data.error.message;
+            }
+            // Неизвестный формат
+            else {
+                message.textContent = "📦 " + event.data;
+            }
+
+            messages.appendChild(message);
+            messages.scrollTop = messages.scrollHeight;
+        };
+
+        function sendMessage(event) {
+            var input = document.getElementById("messageText");
+            var method = input.value.trim();
+
+            if (!method) return;
+
+            // Создаём JSON-RPC запрос
+            var request = {
+                jsonrpc: "2.0",
+                method: method,
+                id: ++requestCounter
+            };
+
+            ws.send(JSON.stringify(request));
+            addMessage("Вы: " + method);
+            input.value = '';
+            event.preventDefault();
+        }
+
+        function addMessage(text) {
+            var message = document.createElement('li');
+            message.textContent = text;
+            messages.appendChild(message);
+        }
+    </script>
+</body>
+</html>
