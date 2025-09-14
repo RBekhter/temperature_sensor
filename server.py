@@ -1,5 +1,6 @@
 from typing import Dict
 import json
+import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -9,26 +10,25 @@ app = FastAPI()
 sensor_websocket: WebSocket = None
 
 
-@app.get("/client")
-async def get_client():
-    with open("client.html", "r", encoding="utf-8") as f:
-        return HTMLResponse(f.read())
-
-
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
         self.client_states: Dict[WebSocket, Dict] = {}
+        self.subscriber_count = 0
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
         self.client_states[websocket] = {
-            "subscribed": None
+            "subscribed": False
         }
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.client_states:
+            if self.client_states[websocket]["subscribed"]:
+                self.subscriber_count -= 1
+                if self.subscriber_count == 0:
+                    asyncio.create_task(self._notify_sensor_stop())
             del self.client_states[websocket]
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
@@ -38,13 +38,56 @@ class ConnectionManager:
 
     async def broadcast(self, message: str):
         for conn in self.active_connections:
+            if self.client_states[conn]["subscribed"]:
+                try:
+                    await conn.send_text(message)
+                except WebSocketDisconnect:
+                    self.disconnect(conn)
+
+    def client_subscribe(self, websocket: WebSocket):
+        state = self.client_states.get(websocket)
+        if state and not state["subscribed"]:
+            state["subscribed"] = True
+            self.subscriber_count += 1
+            if self.subscriber_count == 1:
+                asyncio.create_task(self._notify_sensor_start())
+
+    def client_unsubscribe(self, websocket: WebSocket):
+        state = self.client_states.get(websocket)
+        if state and state["subscribed"]:
+            state["subscribed"] = False
+            self.subscriber_count -= 1
+            if self.subscriber_count == 0:
+                asyncio.create_task(self._notify_sensor_stop())
+
+    async def _notify_sensor_start(self):
+        global sensor_websocket
+        if sensor_websocket is not None:
             try:
-                await conn.send_text(message)
+                await sensor_websocket.send_text(
+                    json.dumps({"jsonrpc": "2.0", "method": "start"})
+                )
             except WebSocketDisconnect:
-                self.disconnect(conn)
+                sensor_websocket = None
+
+    async def _notify_sensor_stop(self):
+        global sensor_websocket
+        if sensor_websocket is not None:
+            try:
+                await sensor_websocket.send_text(
+                    json.dumps({"jsonrpc": "2.0", "method": "stop"})
+                )
+            except WebSocketDisconnect:
+                sensor_websocket = None
 
 
 manager = ConnectionManager()
+
+
+@app.get("/client")
+async def get_client():
+    with open("client.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
 
 
 @app.websocket("/ws/client")
@@ -53,7 +96,6 @@ async def websocket_client(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            msg_id = 1
             try:
                 request = json.loads(data)
             except json.JSONDecodeError:
@@ -69,32 +111,11 @@ async def websocket_client(websocket: WebSocket):
                 if sensor_websocket is None:
                     await send_error(websocket, "No sensor connected", -32001, msg_id)
                 else:
-                    await sensor_websocket.send_text(
-                        json.dumps({
-                            "jsonrpc": "2.0",
-                            "method": "start",
-                            "id": 1
-                        })
-                    )
-                    cmd = {"jsonrpc": "2.0", "method": "start", "id": 1}
-                    await websocket.send_text(json.dumps(cmd))
-                    manager.client_states[websocket]["subscribed"] = True
-                    await send_success(websocket, "Start command sent", msg_id)
+                    manager.client_subscribe(websocket)
             elif method == "stop":
                 if sensor_websocket is None:
                     await send_error(websocket, "No sensor connected", -32001, msg_id)
-                else:
-                    await sensor_websocket.send_text(
-                        json.dumps({
-                            "jsonrpc": "2.0",
-                            "method": "stop",
-                            "id": 1
-                        })
-                    )
-                    cmd = {"jsonrpc": "2.0", "method": "stop", "id": 1}
-                    await sensor_websocket.send_text(json.dumps(cmd))
-                    manager.client_states[websocket]["subscribed"] = False
-                    await send_success(websocket, "Stop command sent", msg_id)
+                manager.client_unsubscribe(websocket)
             elif method == "disconnect":
                 await send_success(websocket, "Disconnected", msg_id)
                 await websocket.close()
@@ -103,7 +124,6 @@ async def websocket_client(websocket: WebSocket):
                 await send_error(websocket, "Method not found", -32601, msg_id)
     except WebSocketDisconnect:
         print("Клиент отключился")
-
     finally:
         manager.disconnect(websocket)
         print('Подключение закрыто')
@@ -111,7 +131,6 @@ async def websocket_client(websocket: WebSocket):
 
 @app.websocket("/ws/sensor")
 async def websocket_sensor(websocket: WebSocket):
-    """Датчик подключается сюда и отправляет данные"""
     global sensor_websocket
     await websocket.accept()
     print("Датчик подключён")
@@ -125,14 +144,11 @@ async def websocket_sensor(websocket: WebSocket):
                 print("Некорректный JSON от датчика:", raw_data)
                 continue
             if "result" in data and isinstance(data["result"], dict):
-                # msg_id = data.get("id")
-                msg_id = 1
                 result = data.get("result")
                 await manager.broadcast(
                     json.dumps({
                         "jsonrpc": "2.0",
                         "result": result,
-                        "id": msg_id
                     })
                 )
     except WebSocketDisconnect:

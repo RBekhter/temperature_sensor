@@ -9,6 +9,8 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry config virtualenvs.create false && \
     poetry install
 
-COPY server.py ./
+COPY server.py sensor.py client.html start.sh ./
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+RUN chmod +x start.sh
+
+CMD ["./start.sh"]

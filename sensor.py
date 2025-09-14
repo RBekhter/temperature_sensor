@@ -15,7 +15,7 @@ async def generate_data(websocket):
             rate = random.choice([-1, 0, 1])
             value = 150 + rate
             data = {
-                'time': now,
+                'timestamp': now,
                 'value': value
             }
             try:
@@ -32,7 +32,6 @@ async def generate_data(websocket):
 
 
 async def listen_for_commands(websocket):
-    """Слушает команды от сервера"""
     global running
     while True:
         try:
@@ -42,11 +41,10 @@ async def listen_for_commands(websocket):
                 if cmd.get("jsonrpc") != "2.0":
                     continue
                 method = cmd.get("method")
-                msg_id = cmd.get("id")
+                msg_id = cmd.get("id", None)
                 if method == "start":
                     running = True
-                    print("Датчик: запущен")
-                    # Отправляем подтверждение
+                    print("Датчик запущен")
                     await websocket.send(
                         json.dumps({
                             "jsonrpc": "2.0",
@@ -56,7 +54,6 @@ async def listen_for_commands(websocket):
                     )
                 elif method == "stop":
                     running = False
-                    print("Датчик: остановлен")
                     await websocket.send(
                         json.dumps({
                             "jsonrpc": "2.0",
@@ -64,6 +61,7 @@ async def listen_for_commands(websocket):
                             "id": msg_id
                         })
                     )
+                    print("Датчик остановлен")
             except json.JSONDecodeError:
                 print("Ошибка парсинга JSON")
         except (websockets.exceptions.ConnectionClosed, json.JSONDecodeError):
@@ -81,7 +79,7 @@ async def run():
                     generate_data(websocket)
                 )
         except Exception as e:
-            print(f"Датчик потерян: {e}. Повторное подключение через 3 сек...")
+            print(f"Потеряно соединение с сервером: {e}. Повторное подключение через 3 сек...")
             await asyncio.sleep(3)
 
 if __name__ == "__main__":
