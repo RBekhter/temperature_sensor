@@ -1,6 +1,8 @@
 from typing import Dict
 import json
 import asyncio
+import logging
+from logging.handlers import TimedRotatingFileHandler
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -8,6 +10,23 @@ from fastapi.responses import HTMLResponse
 app = FastAPI()
 
 sensor_websocket: WebSocket = None
+
+handler = TimedRotatingFileHandler(
+    "server.log",
+    when="midnight",
+    interval=1
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(name)s: %(message)s',
+    handlers=[
+        handler,
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger("Server")
 
 
 class ConnectionManager:
@@ -34,6 +53,7 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def send_message(self, message: str, websocket: WebSocket):
+        logging.info(f"Отправлен запрос: {message}")
         await websocket.send_text(message)
 
     async def broadcast(self, message: str):
@@ -92,48 +112,63 @@ async def get_client():
 
 @app.websocket("/ws/client")
 async def websocket_client(websocket: WebSocket):
+    client_id = id(websocket)
     await manager.connect(websocket)
+    logger.info(f"[Client#{client_id}] Подключен")
     try:
         while True:
             data = await websocket.receive_text()
+            logger.info(f"[Client#{client_id}] Получена команда: '{data}'")
             try:
                 request = json.loads(data)
             except json.JSONDecodeError:
                 await send_error(websocket, "Invalid JSON", -32700, None)
                 continue
             if request.get("jsonrpc") != "2.0":
-                await send_error(websocket, "Invalid JSON-RPC version", -32600, None)
+                await send_error(
+                    websocket,
+                    "Invalid JSON-RPC version",
+                    -32600,
+                    None
+                )
                 continue
             method = request.get("method")
             msg_id = request.get("id")
 
             if method == "start":
                 if sensor_websocket is None:
-                    await send_error(websocket, "No sensor connected", -32001, msg_id)
+                    await send_error(
+                        websocket,
+                        "No sensor connected",
+                        -32001,
+                        msg_id
+                    )
                 else:
                     manager.client_subscribe(websocket)
             elif method == "stop":
                 if sensor_websocket is None:
-                    await send_error(websocket, "No sensor connected", -32001, msg_id)
+                    await send_error(
+                        websocket,
+                        "No sensor connected",
+                        -32001,
+                        msg_id
+                    )
                 manager.client_unsubscribe(websocket)
-            elif method == "disconnect":
-                await send_success(websocket, "Disconnected", msg_id)
-                await websocket.close()
-                break
             else:
+                logger.warning(f"Неизвестная команда '{method}'")
                 await send_error(websocket, "Method not found", -32601, msg_id)
     except WebSocketDisconnect:
-        print("Клиент отключился")
+        logger.info(f"Клиент {client_id} отключился")
     finally:
         manager.disconnect(websocket)
-        print('Подключение закрыто')
+        logger.info(f"Подключение {client_id} закрыто")
 
 
 @app.websocket("/ws/sensor")
 async def websocket_sensor(websocket: WebSocket):
     global sensor_websocket
     await websocket.accept()
-    print("Датчик подключён")
+    logger.info("Датчик подключен")
     sensor_websocket = websocket
     try:
         while True:
@@ -141,7 +176,7 @@ async def websocket_sensor(websocket: WebSocket):
             try:
                 data = json.loads(raw_data)
             except json.JSONDecodeError:
-                print("Некорректный JSON от датчика:", raw_data)
+                logger.warning(f"Некорректные данные от датчика: {raw_data}")
                 continue
             if "result" in data and isinstance(data["result"], dict):
                 result = data.get("result")
@@ -152,7 +187,7 @@ async def websocket_sensor(websocket: WebSocket):
                     })
                 )
     except WebSocketDisconnect:
-        print("Датчик отключён")
+        logger.info("Датчик отключен")
         sensor_websocket = None
 
 
@@ -164,7 +199,11 @@ async def send_success(websocket: WebSocket, result: any, msg_id: any):
     )
 
 
-async def send_error(websocket: WebSocket, message: str, code: int, msg_id: any):
+async def send_error(
+        websocket: WebSocket,
+        message: str,
+        code: int,
+        msg_id: any):
     response = {
         "jsonrpc": "2.0",
         "error": {"code": code, "message": message},

@@ -79,7 +79,8 @@ async def run():
                     generate_data(websocket)
                 )
         except Exception as e:
-            print(f"Потеряно соединение с сервером: {e}. Повторное подключение через 3 сек...")
+            print(f"Потеряно соединение с сервером: {e}. "
+                  f"Повторное подключение через 3 сек...")
             await asyncio.sleep(3)
 
 if __name__ == "__main__":
