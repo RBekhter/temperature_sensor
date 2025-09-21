@@ -1,18 +1,40 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Temperature sensor</title>
+    <title>Sensors server</title>
+    <style>
+        .input-group {
+            margin: 10px 0;
+        }
+        .input-group label {
+            display: inline-block;
+            width: 100px;
+            font-weight: bold;
+        }
+        .input-group input {
+            padding: 4px;
+            width: 150px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Датчик температуры</h1>
+    <h1>Управление датчиками</h1>
     <text>
         Используйте команды для управления передачей данных:<br>
         start - чтобы начать<br>
         stop - чтобы остановить
     </text>
 
+    <div class="input-group">
+        <label>Номер датчика:</label>
+        <input type="text" id="sensorIdInput" value="123" />
+    </div>
+
     <form action="" onsubmit="sendMessage(event)">
-        <input type="text" id="messageText" autocomplete="off"/>
+        <div class="input-group">
+            <label>Команда:</label>
+            <input type="text" id="messageText" autocomplete="off"/>
+        </div>
         <button>Send</button>
     </form>
 
@@ -33,7 +55,10 @@
 
         function sendMessage(event) {
             var input = document.getElementById("messageText");
+            var sensorIdInput = document.getElementById("sensorIdInput");
+
             var value = input.value.trim();
+            var sensorId = sensorIdInput.value.trim();
 
             if (!value) {
                 event.preventDefault();
@@ -44,6 +69,7 @@
             var request = {
                 jsonrpc: "2.0",
                 method: value,
+                params: {sensor_id: sensorId},
                 id: ++requestId
             };
 
