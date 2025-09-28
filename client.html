@@ -44,6 +44,22 @@
     <script>
         var ws = new WebSocket("ws://localhost:8000/ws/client");
         var requestId = 0;
+        var clientId = localStorage.getItem('client_id');
+        if (!clientId) {
+            clientId = 'client-' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('client_id', clientId);
+        }
+
+        ws.onopen = function() {
+            // Отправляем init-сообщение
+            ws.send(JSON.stringify({
+                jsonrpc: "2.0",
+                method: "init",
+                params: { client_id: clientId },
+                id: 1
+            }));
+            appendMessage("Подключено, client_id: " + clientId, "received");
+        };
 
         ws.onmessage = function(event) {
             var messages = document.getElementById('messages');

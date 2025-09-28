@@ -9,7 +9,7 @@ running = False
 SENSOR_ID = "123"
 
 
-async def generate_data(websocket, sensor_id):
+async def generate_data(websocket):
     while True:
         if running:
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -18,7 +18,6 @@ async def generate_data(websocket, sensor_id):
             data = {
                 'timestamp': now,
                 'value': value,
-                "sensor_id": sensor_id
             }
             await websocket.send(
                 json.dumps({
@@ -43,29 +42,15 @@ async def listen_for_commands(websocket):
             if method == "start":
                 running = True
                 print(f"Датчик {SENSOR_ID} запущен")
-                await websocket.send(
-                    json.dumps({
-                        "jsonrpc": "2.0",
-                        "result": "Sensor started",
-                        "id": msg_id
-                    })
-                )
             elif method == "stop":
                 running = False
-                await websocket.send(
-                    json.dumps({
-                        "jsonrpc": "2.0",
-                        "result": "Sensor stopped",
-                        "id": msg_id
-                    })
-                )
                 print(f"Датчик {SENSOR_ID} остановлен")
         except json.JSONDecodeError:
             print("Ошибка парсинга JSON")
 
 
 async def run():
-    uri = "ws://localhost:8000/ws/sensor"
+    uri = "ws://localhost:8001/ws/sensor"
     while True:
         try:
             async with websockets.connect(uri) as websocket:
@@ -73,7 +58,7 @@ async def run():
                 print(f"Датчик {SENSOR_ID} подключился к серверу")
                 await asyncio.gather(
                     listen_for_commands(websocket),
-                    generate_data(websocket, SENSOR_ID)
+                    generate_data(websocket)
                 )
         except Exception as e:
             print(f"Потеряно соединение с сервером: {e}. "
