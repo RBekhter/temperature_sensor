@@ -27,7 +27,7 @@ python sensor.py &
 SENSOR_PID=$!
 
 echo "Открытие веб-станицы"
-xdg-open "http://127.0.0.1:8000/client" || echo "Откройте вручную: http://127.0.0.1:8000/client"
+xdg-open "http://127.0.0.1:8000/client" || echo "Откройте: http://127.0.0.1:8000/client"
 
 trap 'echo "Остановка сервера и датчика..."; kill $UVICORN_PID $SENSOR_PID 2>/dev/null || true; exit' INT TERM
 

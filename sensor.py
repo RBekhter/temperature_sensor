@@ -1,9 +1,9 @@
 import asyncio
-import websockets
-import json
 import datetime
+import json
 import random
 
+import websockets
 
 running = False
 SENSOR_ID = "123"

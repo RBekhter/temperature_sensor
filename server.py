@@ -1,8 +1,8 @@
-from typing import Dict
-import json
 import asyncio
+import json
 import logging
 from logging.handlers import TimedRotatingFileHandler
+from typing import Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -54,7 +54,8 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    async def send_message(self, message: str, websocket: WebSocket):
+    @staticmethod
+    async def send_message(message: str, websocket: WebSocket):
         await websocket.send_text(message)
 
     async def broadcast(self, sensor_id: str, message: str):
@@ -98,7 +99,8 @@ class ConnectionManager:
         if current_count == 0:
             asyncio.create_task(self._notify_sensor_stop(sensor_id))
 
-    async def _notify_sensor_start(self, sensor_id: str):
+    @staticmethod
+    async def _notify_sensor_start(sensor_id: str):
         global connected_sensors
         sensor_ws = connected_sensors.get(sensor_id)
         if sensor_ws is None:
@@ -113,7 +115,8 @@ class ConnectionManager:
         except WebSocketDisconnect:
             connected_sensors.pop(sensor_id, None)
 
-    async def _notify_sensor_stop(self, sensor_id: str):
+    @staticmethod
+    async def _notify_sensor_stop(sensor_id: str):
         global connected_sensors
         sensor_ws = connected_sensors.get(sensor_id)
         if sensor_ws is None:
@@ -140,11 +143,11 @@ async def websocket_client(websocket: WebSocket):
     global connected_sensors
     client_id = id(websocket)
     await manager.connect(websocket)
-    logger.info(f"[Client#{client_id}] Подключен")
+    logger.info(f"[Client#{client_id}] подключен")
     try:
         while True:
             data = await websocket.receive_text()
-            logger.info(f"[Client#{client_id}] Получено: '{data}'")
+            logger.info(f"[Client#{client_id}] получено: '{data}'")
             try:
                 request = json.loads(data)
             except json.JSONDecodeError:
@@ -182,16 +185,15 @@ async def websocket_client(websocket: WebSocket):
                     msg_id
                 )
                 continue
+            logger.info(f"{client_id} отправил {method} датчику: {sensor_id}")
             if method == "start":
                 manager.client_subscribe(websocket, sensor_id)
-                logger.info(f"{client_id} отправил start датчику: {sensor_id}")
                 await send_success(
                     websocket,
                     f"Subscribed to sensor {sensor_id}",
                     msg_id
                 )
             elif method == "stop":
-                logger.info(f"{client_id} отправил stop датчику: {sensor_id}")
                 manager.client_unsubscribe(websocket, sensor_id)
             else:
                 logger.warning(f"Неизвестная команда '{method}'")
