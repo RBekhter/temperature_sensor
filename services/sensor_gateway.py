@@ -2,7 +2,8 @@ from fastapi import FastAPI, WebSocket
 import json
 import asyncio
 import logging
-from services.redis_client import redis
+from redis_client import redis
+from metrics import ACTIVE_SENSORS
 
 app = FastAPI()
 
@@ -15,7 +16,6 @@ logger = logging.getLogger("sensor-gateway")
 async def websocket_sensor(websocket: WebSocket):
     await websocket.accept()
     sensor_id = None
-    # listen_task = None
     try:
         init_message = await websocket.receive_text()
         data = json.loads(init_message)
@@ -25,6 +25,7 @@ async def websocket_sensor(websocket: WebSocket):
             logger.warning("Датчик не предоставил ID, подключение отклонено")
             return
         await redis.hset("connected_sensors", sensor_id, "1")
+        ACTIVE_SENSORS.inc()
         logger.info(f"Датчик {sensor_id} подключен")
 
         async def listen_commands():
@@ -77,4 +78,24 @@ async def websocket_sensor(websocket: WebSocket):
     finally:
         if sensor_id:
             await redis.hdel("connected_sensors", sensor_id)
+            ACTIVE_SENSORS.dec()
             logger.info(f"Датчик {sensor_id} отключен")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    host = os.getenv("SENSOR_GATEWAY_HOST")
+    port = int(os.getenv("SENSOR_GATEWAY_PORT"))
+    log_level = os.getenv("LOG_LEVEL", "info")
+
+    uvicorn.run(
+        "sensor_gateway:app",
+        host=host,
+        port=port,
+        log_level=log_level.lower(),
+        reload=True
+    )

@@ -1,11 +1,13 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
 from fastapi.responses import HTMLResponse
 import json
 import os
 from pathlib import Path
 import asyncio
 import logging
-from services.redis_client import redis
+from redis_client import redis
+from metrics import ACTIVE_CLIENTS, SENSOR_MESSAGES
+
 
 app = FastAPI()
 
@@ -16,6 +18,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("client-gateway")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+@app.get("/health")
+async def health():
+    try:
+        await redis.ping()
+        return {"status": "ok", "redis": "connected"}
+    except Exception as e:
+        return {"status": "error", "redis": str(e)}
+
+@app.get("/metrics")
+async def metrics():
+    from metrics import get_metrics
+    return Response(get_metrics(), media_type="text/plain")
 
 @app.get("/client")
 async def get_client():
@@ -44,6 +60,7 @@ async def websocket_client(websocket: WebSocket):
             return
 
         client_connections[client_id] = websocket
+        ACTIVE_CLIENTS.inc()
         logger.info(f"[Client#{client_id}] подключен")
 
         while True:
@@ -126,6 +143,7 @@ async def websocket_client(websocket: WebSocket):
 
             await redis.delete(f"client:{client_id}:subscriptions")
             client_connections.pop(client_id, None)
+            ACTIVE_CLIENTS.dec()
             logger.info(f"Подключение с {client_id} закрыто")
 
 
@@ -144,6 +162,7 @@ async def start_sensor_listener():
                     if not sensor_id:
                         logger.warning(f"Ошибка в sensor ID {sensor_id}: {e}")
                         continue
+                    SENSOR_MESSAGES.labels(sensor_id=sensor_id).inc()
                     subscribers = await redis.smembers(f"sensor:{sensor_id}:subscribers")
                     for client_id in subscribers:
                         ws = client_connections.get(client_id)
@@ -180,3 +199,22 @@ async def send_error(
         "id": msg_id
     }
     await websocket.send_text(json.dumps(response))
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    host = os.getenv("CLIENT_GATEWAY_HOST")
+    port = int(os.getenv("CLIENT_GATEWAY_PORT"))
+    log_level = os.getenv("LOG_LEVEL", "info")
+
+    uvicorn.run(
+        "client_gateway:app",
+        host=host,
+        port=port,
+        log_level=log_level.lower(),
+        reload=True
+    )
