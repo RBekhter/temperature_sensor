@@ -13,6 +13,7 @@ app = FastAPI()
 
 
 client_connections = {}
+listener_task = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("client-gateway")
@@ -149,6 +150,7 @@ async def websocket_client(websocket: WebSocket):
 
 @app.on_event("startup")
 async def start_sensor_listener():
+    global listener_task
     pubsub = redis.pubsub()
     await pubsub.subscribe("all_sensors")
 
@@ -160,7 +162,7 @@ async def start_sensor_listener():
                     data = json.loads(message["data"])
                     sensor_id = data.get("result", {}).get("sensor_id")
                     if not sensor_id:
-                        logger.warning(f"Ошибка в sensor ID {sensor_id}: {e}")
+                        logger.warning(f"Ошибка в sensor ID {sensor_id}")
                         continue
                     SENSOR_MESSAGES.labels(sensor_id=sensor_id).inc()
                     subscribers = await redis.smembers(f"sensor:{sensor_id}:subscribers")
@@ -174,10 +176,13 @@ async def start_sensor_listener():
                                 }))
                             except Exception as e:
                                 logger.warning(f"Ошибка отправки клиенту {client_id}: {e}")
+                except asyncio.CancelledError:
+                    logger.info("Listener task cancelled")
+                    raise
                 except Exception as e:
                     logger.error(f"Ошибка обработки сообщения: {e}")
 
-    asyncio.create_task(listen())
+    listener_task = asyncio.create_task(listen())
 
 
 async def send_success(websocket: WebSocket, result: any, msg_id: any):
@@ -199,6 +204,44 @@ async def send_error(
         "id": msg_id
     }
     await websocket.send_text(json.dumps(response))
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global listener_task
+    logger.info("Shutdown...")
+    try:
+        if listener_task and not listener_task.done():
+            listener_task.cancel()
+            try:
+                await listener_task
+            except asyncio.CancelledError:
+                logger.info("Listener task successfully cancelled")
+        subscriber_counts = await redis.hgetall("subscriber_counts")
+        stop_tasks = []
+        for sensor_id, count_str in subscriber_counts.items():
+            try:
+                count = int(count_str)
+                if count > 0:
+                    logger.info(f"Отправляю stop датчику {sensor_id} (подписчиков: {count})")
+                    task = redis.publish(
+                        f"command:{sensor_id}",
+                        json.dumps({"cmd": "stop"})
+                    )
+                    stop_tasks.append(task)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Некорректное значение счётчика для {sensor_id}: {count_str}")
+        if stop_tasks:
+            await asyncio.gather(*stop_tasks, return_exceptions=True)
+            await asyncio.sleep(2)
+        await redis.close()
+        logger.info("Shutdown OK")
+    except Exception as e:
+        logger.error(f"Shutdown error: {e}")
+        try:
+            await redis.close()
+        except:
+            pass
 
 
 if __name__ == "__main__":

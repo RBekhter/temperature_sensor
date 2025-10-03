@@ -81,6 +81,10 @@ async def websocket_sensor(websocket: WebSocket):
             ACTIVE_SENSORS.dec()
             logger.info(f"Датчик {sensor_id} отключен")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Закрываю соединение с Redis")
+    await redis.close()
 
 if __name__ == "__main__":
     import uvicorn
