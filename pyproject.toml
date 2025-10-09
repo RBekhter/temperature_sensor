@@ -10,6 +10,14 @@ python = "^3.9"
 fastapi = "^0.95.0"
 uvicorn = { version = "^0.21.1", extras = ["standard"] }
 websockets = "^15.0.1"
+prometheus-client = "^0.23.1"
+python-dotenv = "^1.1.1"
+redis = "^6.4.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.2"
+pytest-asyncio = "^1.2.0"
+httpx = "^0.28.1"
 
 [build-system]
 requires = ["poetry-core"]
